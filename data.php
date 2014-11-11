@@ -1,59 +1,51 @@
 <?php 
-
 date_default_timezone_set('America/Chicago');
 
-$mysqlnd = function_exists('mysqli_fetch_all');
-
+    class Events{
+     
+	public $con;
+	public $user;
+	public $timeline_start;
+	public $timeline_stop;
+	
+	  function __construct($start,$stop,$user){
+	     //check mysql native drivers version
+	      $mysqlnd = function_exists('mysqli_fetch_all');
+     
 	if (!$mysqlnd) {
 	 die("You have to enable it!");
 	}
+	     
+	     $this->con=mysqli_connect('ns2.oxen.arvixe.com','janek211_ibeacon','stany','janek211_ibeacons');
+	     if(!$this->con){
+		 die("Connection error: " . mysqli_connect_errno());
+	      }
 
- //$con = mysqli_connect("localhost","root","root","beacons");
-
- $con=mysqli_connect('ns2.oxen.arvixe.com','janek211_ibeacon','stany','janek211_ibeacons');
-  if(!$con){
-	  die("Connection error: " . mysqli_connect_errno());
-	 }
-
- if(!isset($_REQUEST["start"])&&!isset($_REQUEST["stop"])){
-  $datetime = new DateTime('2000-01-01');
-  $timeline_start=$datetime->format('Y-m-d');
-  $datetime = new DateTime('tomorrow');
-  $timeline_stop = $datetime->format('Y-m-d');
-	$user = $_REQUEST['user'];
-}
-$clear = false;
-if(isset($_REQUEST["ccc"])){
-	$clear = true;
-}
-
-if(isset($_REQUEST["start"])&&isset($_REQUEST["stop"])){
-	 $timestamp1= $_REQUEST["start"];
-	 $dt1 = new DateTime($_REQUEST["start"]);
-	 $timeline_start = $dt1->format('Y-m-d H:i:s');;
-	
-	 $dt2 = new DateTime($_REQUEST["stop"]);
-	 $timeline_stop = $dt2->format('Y-m-d H:i:s');;
-	
-	 $user = $_REQUEST['user'];
-}
-	
-	function clearTables(){
-		global $con;
-		try{
-		 mysqli_multi_query($con,"DELETE FROM `wp__region_events` WHERE 1; DELETE FROM `wp__override_events` WHERE 1; DELETE FROM `wp__proximity_events` WHERE 1; DELETE FROM `wp__scan_events` WHERE 1;DELETE FROM `wp__session_events` WHERE 1");
+	      $this->user = $user;
+	      $this->timeline_start = $start;
+	      $this->timeline_stop = $stop;  
+	  }
+     
+	  function getIbeaconTitle($bid,$arrayofibeacons){
+			for($i=0;$i<count($arrayofibeacons);$i++)
+		{
+			$id= $arrayofibeacons[$i][0];	
+			$title= $arrayofibeacons[$i][1];
+			if($id == $bid){
+				return $title;
+			}
 		}
-		catch(Exception $e){
-			echo $e->getMessage();
-			die("Didnt work");
-		}
-		die("tabula rasa");
+	   return "Beacon";
 	}
 	
-	if($clear)	clearTables();
+	 function timeDifference($date_start, $date_end){
+	$to_time = strtotime($date_end);
+	$from_time = strtotime($date_start);
 	
-
-
+	$number_of_minutes =  round(abs($to_time - $from_time) / 60,2);
+	return $number_of_minutes;
+ }
+	
 	function getArray($con, $query){
 		$result;
 		try{
@@ -69,37 +61,71 @@ if(isset($_REQUEST["start"])&&isset($_REQUEST["stop"])){
 		return $array;						
 	}
 	
-	function getIbeaconTitle($bid,$arrayofibeacons){
-			for($i=0;$i<count($arrayofibeacons);$i++)
-		{
-			$id= $arrayofibeacons[$i][0];	
-			$title= $arrayofibeacons[$i][1];
-			if($id == $bid){
-				return $title;
-			}
+	
+       
+	public function getProximityArray($json=false){
+	  $proximityArray =$this->getArray($this->con,"SELECT * FROM wp__proximity_events WHERE event_date > '$this->timeline_start' AND event_date <'$this->timeline_stop' AND user ='$this->user' ORDER BY event_date ");
+	   if($json == true) return json_encode($proximityArray);	   
+	   return $proximityArray;
+	}
+	
+	public function getRegionsArray($json=false){
+	  $regionsArray = $this->getArray($this->con,"SELECT * FROM `wp__region_events` WHERE user = $this->user");
+	   if($json == true) return json_encode($regionsArray);	   
+	   return $regionsArray;
+	}
+  	
+	public function getSessionsArray($json=false){
+	  $array = $this->getArray($this->con,"SELECT * FROM `wp__session_events` WHERE user = $this->user");
+	   if($json == true) return json_encode($array);	   
+	   return $array;
+	}
+	
+	public function getScansArray($json=false){
+	  $array = $this->getArray($this->con,"SELECT * FROM `wp__scan_events` WHERE user = $this->user");
+	   if($json == true) return json_encode($array);	   
+	   return $array;
+	}
+       
+       public function getUsers($json=false){
+	 $array = $this->getArray($this->con,"SELECT * FROM `wp_users`");
+	   if($json == true) return json_encode($array);	   
+	   return $array;
+       }
+       
+       public function getOverrides($json=false){
+	 $array =  $this->getArray($this->con,"SELECT * FROM `wp__override_events` WHERE user = $this->user");
+	   if($json == true) return json_encode($array);	   
+	   return $array;
+       }
+       
+       public function getBeacons($json=false){
+	   $array =  $this->getArray($this->con,"SELECT `ID`,`post_title` FROM `wp_posts` WHERE `post_type` = 'ibeacon'");
+	   if($json == true) return json_encode($array);	   
+	   return $array;
+	
+       }
+       
+       public function getAllEvents($json=false){
+	 $array = array_merge($this->getOverrides, $this->getProximityArray, $this->getRegionsArray, $this->getScansArray, $this->getSessionsArray);
+	if($json) return json_encode($array);
+	 return $array; 
+       }
+       
+       function clearTables(){
+	
+		try{
+		 mysqli_multi_query($this->con,"DELETE FROM `wp__region_events` WHERE 1; DELETE FROM `wp__override_events` WHERE 1; DELETE FROM `wp__proximity_events` WHERE 1; DELETE FROM `wp__scan_events` WHERE 1;DELETE FROM `wp__session_events` WHERE 1");
 		}
-			return "Beacon";
+		catch(Exception $e){
+			echo $e->getMessage();
+			die("Didnt work");
 		}
-	
-	 function timeDifference($date_start, $date_end){
-	$to_time = strtotime($date_end);
-	$from_time = strtotime($date_start);
-	
-	$number_of_minutes =  round(abs($to_time - $from_time) / 60,2);
-	return $number_of_minutes;
- }
-	
-	
-	$arrayofusers = getArray($con,"SELECT * FROM `wp_users`"); ///getUsers();
-	$arrayofibeacons =  getArray($con,"SELECT `ID`,`post_title` FROM `wp_posts` WHERE `post_type` = 'ibeacon'");
-	
-	$proximityArray =getArray($con,"SELECT * FROM wp__proximity_events WHERE event_date > '$timeline_start' AND event_date <'$timeline_stop' AND user ='$user' ORDER BY event_date ");//  getProximityEvents($timeline_start, $user);
-	$regionsArray = getArray($con,"SELECT * FROM `wp__region_events` WHERE user = $user");
-	$sessionArray = getArray($con,"SELECT * FROM `wp__session_events` WHERE user = $user");
-	$scansArray =  getArray($con,"SELECT * FROM `wp__scan_events` WHERE user = $user");
-	$overrideArray =  getArray($con,"SELECT * FROM `wp__override_events` WHERE user = $user");
-	
+		die("tabula rasa");
+	}
+}
 
-	$all_events = array_merge($regionsArray,$sessionArray,$overrideArray,$scansArray);	
+ 
 
- ?>
+
+?>
